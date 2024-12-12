@@ -1,0 +1,49 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace = "com.example.location_service"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+
+    defaultConfig {
+        // Replace this with your unique application ID
+        applicationId = "com.example.location_service"
+        // Minimum and target SDK versions from Flutter configuration
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        // Versioning managed by Flutter configuration
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    buildTypes {
+        debug {
+            // For debugging
+            signingConfig signingConfigs.debug
+        }
+        release {
+            // Configure for release builds
+            signingConfig signingConfigs.debug
+            minifyEnabled false // Disable ProGuard for simplicity during development
+            shrinkResources false
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}
