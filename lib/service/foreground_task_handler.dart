@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:geolocator/geolocator.dart';
 import 'location_service.dart';
 
 @pragma('vm:entry-point')
@@ -9,10 +11,36 @@ void startCallback() {
 }
 
 class LocationTrackingHandler extends TaskHandler {
+  StreamSubscription<Position>? positionStream;
+
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // Initialize anything needed for the background task
     print("Background location tracking started");
+
+    // Start listening to location updates
+    positionStream =
+        Geolocator.getPositionStream().listen((Position position) async {
+      final locationJson = json.encode(position.toJson());
+      await FlutterForegroundTask.saveData(
+          key: 'last_location', value: locationJson);
+
+      // Update the foreground notification with the new location data
+      String notificationText =
+          'Latitude: ${position.latitude.toStringAsFixed(8)}\n'
+          'Longitude: ${position.longitude.toStringAsFixed(8)}';
+      await FlutterForegroundTask.updateService(
+        notificationTitle: 'Location Tracking Active',
+        notificationText: notificationText,
+      );
+    });
+
+    // Optionally load saved data or initialize settings
+    final lastLocation =
+        await FlutterForegroundTask.getData(key: 'last_location');
+    if (lastLocation != null) {
+      print('Restored last location: $lastLocation');
+    }
   }
 
   @override
@@ -21,22 +49,8 @@ class LocationTrackingHandler extends TaskHandler {
       final position = await LocationService.getCurrentLocation();
 
       if (position != null) {
-        // Save the latest position
-        final locationJson = json.encode(position.toJson());
-        await FlutterForegroundTask.saveData(
-            key: 'last_location', value: locationJson);
-
         // Send location data to the foreground via SendPort if provided
         sendPort?.send({'location': position.toJson()});
-
-        // Update the foreground notification with the new location data
-        String notificationText =
-            'Latitude: ${position.latitude.toStringAsFixed(8)}\n'
-            'Longitude: ${position.longitude.toStringAsFixed(8)}';
-        await FlutterForegroundTask.updateService(
-          notificationTitle: 'Location Tracking Active',
-          notificationText: notificationText,
-        );
       }
     } catch (e) {
       print('Error in background location tracking: $e');
@@ -45,12 +59,14 @@ class LocationTrackingHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp) async {
-    // Clean up any resources
+    // Clean up location stream subscription
+    await positionStream?.cancel();
     print("Background location tracking stopped");
   }
 
   @override
   void onRepeatEvent(DateTime timestamp) {
     // Repeated events can be handled here if necessary
+    print("Repeat event triggered at: $timestamp");
   }
 }
