@@ -6,6 +6,10 @@
         android:allowBackup="true"
         android:usesCleartextTraffic="true">
         
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyBLiH_7xT_QlJVurMSa3iZ4Pq5S6WAe6zY" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
