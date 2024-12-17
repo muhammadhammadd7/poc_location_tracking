@@ -13,6 +13,9 @@ void startCallback() {
 class LocationTrackingHandler extends TaskHandler {
   StreamSubscription<Position>? positionStream;
 
+  ////
+  // Start the foreground task
+  ////
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // Initialize anything needed for the background task
@@ -43,6 +46,9 @@ class LocationTrackingHandler extends TaskHandler {
     }
   }
 
+  ////
+  // Handle the event
+  ////
   @override
   Future<void> onEvent(DateTime timestamp, SendPort? sendPort) async {
     try {
@@ -57,6 +63,9 @@ class LocationTrackingHandler extends TaskHandler {
     }
   }
 
+  ////
+  // Stop the foreground task
+  ////
   @override
   Future<void> onDestroy(DateTime timestamp) async {
     // Clean up location stream subscription
@@ -64,9 +73,41 @@ class LocationTrackingHandler extends TaskHandler {
     print("Background location tracking stopped");
   }
 
+  ////
+  // Handle the repeat event
+  ////
   @override
   void onRepeatEvent(DateTime timestamp) {
     // Repeated events can be handled here if necessary
     print("Repeat event triggered at: $timestamp");
+  }
+
+  ////
+  // Initialize the foreground task
+  ////
+  void initForegroundTask() {
+    FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: 'location_tracker',
+        channelName: 'Location Tracking Service',
+        channelDescription:
+            'This notification appears when location is being tracked',
+        channelImportance: NotificationChannelImportance.HIGH,
+        priority: NotificationPriority.LOW,
+        visibility: NotificationVisibility.VISIBILITY_PRIVATE,
+        enableVibration: false,
+        playSound: false,
+      ),
+      iosNotificationOptions: const IOSNotificationOptions(
+        showNotification: true,
+        playSound: false,
+      ),
+      foregroundTaskOptions: ForegroundTaskOptions(
+        eventAction: ForegroundTaskEventAction.repeat(5000),
+        autoRunOnBoot: true,
+        allowWakeLock: true,
+        allowWifiLock: true,
+      ),
+    );
   }
 }

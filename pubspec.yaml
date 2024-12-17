@@ -39,6 +39,8 @@ dependencies:
   flutter_foreground_task: ^8.17.0
   background_locator_2: ^2.0.6
   google_maps_flutter: ^2.10.0
+  flutter_polyline_points: ^2.1.0
+  location: ^7.0.1
 
 dev_dependencies:
   flutter_test:

@@ -45,5 +45,20 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Added keys for location and notification permissions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your app needs access to your location while in use.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Your app needs access to your location even when the app is in the background.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Your app needs continuous location updates.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Your app uses this information to improve the user experience.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>
