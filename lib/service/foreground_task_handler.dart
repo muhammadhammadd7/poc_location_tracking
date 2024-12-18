@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
 import 'location_service.dart';
@@ -19,7 +20,9 @@ class LocationTrackingHandler extends TaskHandler {
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // Initialize anything needed for the background task
-    print("Background location tracking started");
+    if (kDebugMode) {
+      print("Background location tracking started");
+    }
 
     // Start listening to location updates
     positionStream =
@@ -42,14 +45,15 @@ class LocationTrackingHandler extends TaskHandler {
     final lastLocation =
         await FlutterForegroundTask.getData(key: 'last_location');
     if (lastLocation != null) {
-      print('Restored last location: $lastLocation');
+      if (kDebugMode) {
+        print('Restored last location: $lastLocation');
+      }
     }
   }
 
   ////
   // Handle the event
   ////
-  @override
   Future<void> onEvent(DateTime timestamp, SendPort? sendPort) async {
     try {
       final position = await LocationService.getCurrentLocation();
@@ -59,7 +63,9 @@ class LocationTrackingHandler extends TaskHandler {
         sendPort?.send({'location': position.toJson()});
       }
     } catch (e) {
-      print('Error in background location tracking: $e');
+      if (kDebugMode) {
+        print('Error in background location tracking: $e');
+      }
     }
   }
 
@@ -70,7 +76,9 @@ class LocationTrackingHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp) async {
     // Clean up location stream subscription
     await positionStream?.cancel();
-    print("Background location tracking stopped");
+    if (kDebugMode) {
+      print("Background location tracking stopped");
+    }
   }
 
   ////
@@ -79,7 +87,9 @@ class LocationTrackingHandler extends TaskHandler {
   @override
   void onRepeatEvent(DateTime timestamp) {
     // Repeated events can be handled here if necessary
-    print("Repeat event triggered at: $timestamp");
+    if (kDebugMode) {
+      print("Repeat event triggered at: $timestamp");
+    }
   }
 
   ////

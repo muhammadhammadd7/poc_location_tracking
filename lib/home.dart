@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -14,14 +15,19 @@ class HomeScreen extends StatefulWidget {
   HomeScreenState createState() => HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+class HomeScreenState extends State<HomeScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool isTracking = false;
+  bool isRecording = false;
+  bool isPaused = false;
   Position? currentPosition;
   Position? lastStoredPosition;
   Timer? timer;
-
   StreamSubscription? _eventSubscription;
   final MapService _mapService = MapService();
+  late AnimationController _controller;
+  late Animation<double> _widthAnimation;
+  bool isRowOpen = false;
 
   @override
   void initState() {
@@ -34,6 +40,47 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     requestPermissionsAndroid();
     requestPermissionsIOS();
     _initializeEventStream();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _widthAnimation = Tween<double>(begin: 0.0, end: 300.0)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  void toggleRow() {
+    setState(() {
+      if (isRowOpen) {
+        _controller.reverse();
+      } else {
+        _controller.forward();
+      }
+      isRowOpen = !isRowOpen;
+    });
+
+    if (isRecording) {
+      setState(() {
+        isPaused = !isPaused;
+        if (isPaused) {
+          // Pause recording
+          timer?.cancel();
+          FlutterForegroundTask.stopService();
+        } else {
+          // Resume recording
+          _startTracking();
+        }
+      });
+    }
+  }
+
+  void closeRow() {
+    if (isRowOpen) {
+      _controller.reverse();
+      setState(() {
+        isRowOpen = false;
+      });
+    }
   }
 
   ////
@@ -147,6 +194,8 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     setState(() {
       isTracking = true;
+      isRecording = true;
+      isPaused = false;
       LocationService().trackingDuration = 0;
     });
 
@@ -193,6 +242,60 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  void _resumeTracking() async {
+    // Get current location and add marker
+    final position = await LocationService.getCurrentLocation();
+    if (position != null) {
+      setState(() {
+        currentPosition = position;
+        lastStoredPosition = position;
+        isTracking = true;
+        isPaused = false;
+
+        // Add marker and polyline point at resume position
+        _mapService
+            .addPolylinePoint(LatLng(position.latitude, position.longitude));
+      });
+
+      // Save current location
+      final locationJson = json.encode(position.toJson());
+      await FlutterForegroundTask.saveData(
+          key: 'last_location', value: locationJson);
+
+      // Update tracking status
+      await FlutterForegroundTask.saveData(key: 'is_tracking', value: 'true');
+
+      // Resume timer
+      timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+        LocationService().trackingDuration++;
+        _saveTimer();
+
+        final newPosition = await LocationService.getCurrentLocation();
+        if (newPosition != null) {
+          setState(() {
+            currentPosition = newPosition;
+            _mapService.addPolylinePoint(
+                LatLng(newPosition.latitude, newPosition.longitude));
+          });
+
+          final newLocationJson = json.encode(newPosition.toJson());
+          await FlutterForegroundTask.saveData(
+              key: 'last_location', value: newLocationJson);
+
+          String notificationText =
+              'Timer: ${LocationService().formatDuration()}\n'
+              'Latitude: ${newPosition.latitude.toStringAsFixed(8)}\n'
+              'Longitude: ${newPosition.longitude.toStringAsFixed(8)}';
+
+          await FlutterForegroundTask.updateService(
+            notificationTitle: 'Location Tracking Active',
+            notificationText: notificationText,
+          );
+        }
+      });
+    }
+  }
+
   void _stopTracking() async {
     // Save final timer and location before stopping
     await _saveTimer();
@@ -208,6 +311,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     setState(() {
       isTracking = false;
+      isPaused = false;
     });
 
     await FlutterForegroundTask.stopService();
@@ -229,82 +333,189 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return WithForegroundTask(
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Live Location Tracker'),
-          centerTitle: true,
-        ),
-        body: Stack(
-          children: [
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: currentPosition != null
-                    ? LatLng(
-                        currentPosition!.latitude,
-                        currentPosition!.longitude,
-                      )
-                    : const LatLng(
-                        37.4219999, -122.0840575), // Default location
-                zoom: 15,
+    return GestureDetector(
+      onTap: closeRow,
+      child: WithForegroundTask(
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Live Location Tracker'),
+            centerTitle: true,
+          ),
+          body: Stack(
+            children: [
+              GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: currentPosition != null
+                      ? LatLng(
+                          currentPosition!.latitude,
+                          currentPosition!.longitude,
+                        )
+                      : const LatLng(
+                          37.4219999, -122.0840575), // Default location
+                  zoom: 15,
+                ),
+                onMapCreated: _mapService.onMapCreated,
+                polylines: _mapService.polylines,
+                myLocationEnabled: true,
               ),
-              onMapCreated: _mapService.onMapCreated,
-              polylines: _mapService.polylines,
-              myLocationEnabled: true,
-            ),
-            Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (isTracking && currentPosition != null) ...[
+              if (isRecording)
+                AnimatedBuilder(
+                  animation: _widthAnimation,
+                  builder: (context, child) {
+                    return Positioned(
+                      left: 0,
+                      top: MediaQuery.of(context).size.height / 1.5 - 30,
+                      child: isRowOpen
+                          ? GestureDetector(
+                              onTap: () {},
+                              child: Container(
+                                width: _widthAnimation.value,
+                                height: 50,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.horizontal(
+                                    right: Radius.circular(10),
+                                  ),
+                                ),
+                                child: GestureDetector(
+                                  onHorizontalDragEnd: (details) {
+                                    if (details.primaryVelocity! < 0) {
+                                      // Left swipe
+                                      closeRow();
+                                    }
+                                  },
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: SizedBox(
+                                          height: double.infinity,
+                                          child: TextButton(
+                                            onPressed: () {
+                                              if (kDebugMode) {
+                                                print("Resume button pressed");
+                                              }
+                                              _resumeTracking();
+                                            },
+                                            style: TextButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                              foregroundColor: Colors.white,
+                                              shape:
+                                                  const RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.zero,
+                                              ),
+                                            ),
+                                            child: const Text("Resume",
+                                                style: TextStyle(fontSize: 16)),
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: SizedBox(
+                                          height: double.infinity,
+                                          child: TextButton(
+                                            onPressed: () {
+                                              if (kDebugMode) {
+                                                print("Finish button pressed");
+                                              }
+                                              _stopTracking();
+                                            },
+                                            style: TextButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                              foregroundColor: Colors.white,
+                                              shape:
+                                                  const RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.only(
+                                                  topRight: Radius.circular(10),
+                                                  bottomRight:
+                                                      Radius.circular(10),
+                                                ),
+                                              ),
+                                            ),
+                                            child: const Text("Finish",
+                                                style: TextStyle(fontSize: 16)),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            )
+                          : GestureDetector(
+                              onTap: toggleRow,
+                              child: Container(
+                                  width: 60,
+                                  height: 60,
+                                  decoration: const BoxDecoration(
+                                    color: Color.fromARGB(255, 255, 255, 255),
+                                    borderRadius: BorderRadius.horizontal(
+                                      right: Radius.circular(30),
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.fiber_manual_record,
+                                      color: Colors.red)),
+                            ),
+                    );
+                  },
+                ),
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (isTracking && currentPosition != null) ...[
+                      Text(
+                        'Current Location:\nLatitude: ${currentPosition!.latitude.toStringAsFixed(8)}\nLongitude: ${currentPosition!.longitude.toStringAsFixed(8)}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                     Text(
-                      'Current Location:\nLatitude: ${currentPosition!.latitude.toStringAsFixed(8)}\nLongitude: ${currentPosition!.longitude.toStringAsFixed(8)}',
-                      textAlign: TextAlign.center,
+                      LocationService().formatDuration(),
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
+                    if (isTracking && currentPosition == null)
+                      const Column(
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 20),
+                          Text(
+                            'Getting your location...',
+                            style: TextStyle(fontSize: 18),
+                          ),
+                        ],
+                      ),
+                    const SizedBox(height: 15),
+                    Center(
+                      child: !isRecording
+                          ? ElevatedButton(
+                              onPressed: _startTracking,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 70, vertical: 15),
+                              ),
+                              child: const Text(
+                                'Start Recording',
+                                style: TextStyle(
+                                    fontSize: 18, color: Colors.white),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    const SizedBox(
+                      height: 20,
+                    ),
                   ],
-                  Text(
-                    LocationService().formatDuration(),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                  if (isTracking && currentPosition == null)
-                    const Column(
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 20),
-                        Text(
-                          'Getting your location...',
-                          style: TextStyle(fontSize: 18),
-                        ),
-                      ],
-                    ),
-                  const SizedBox(height: 15),
-                  ElevatedButton(
-                    onPressed: isTracking ? _stopTracking : _startTracking,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isTracking ? Colors.red : Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 30, vertical: 15),
-                    ),
-                    child: Text(
-                      isTracking ? 'Stop Tracking' : 'Start Tracking',
-                      style: const TextStyle(fontSize: 18, color: Colors.white),
-                    ),
-                  ),
-                  const SizedBox(
-                    height: 20,
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
