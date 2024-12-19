@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location_service/saved_trail_screen.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'service/foreground_task_handler.dart';
 import 'service/location_service.dart';
 import 'service/map_service.dart';
@@ -31,6 +32,8 @@ class HomeScreenState extends State<HomeScreen>
   List<LatLng> trackingPoints = [];
   Set<Marker> markers = {};
 
+  LocationService locationService = LocationService();
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +45,7 @@ class HomeScreenState extends State<HomeScreen>
     requestPermissionsAndroid();
     requestPermissionsIOS();
     _initializeEventStream();
+    requestPermissions();
 
     _controller = AnimationController(
       vsync: this,
@@ -79,6 +83,25 @@ class HomeScreenState extends State<HomeScreen>
       setState(() {
         isRowOpen = false;
       });
+    }
+  }
+
+  void requestPermissions() async {
+    // Request foreground location permission
+    PermissionStatus status = await Permission.location.request();
+
+    if (status.isGranted) {
+      // If foreground location permission is granted, request background permission
+      PermissionStatus backgroundStatus =
+          await Permission.locationAlways.request();
+
+      if (backgroundStatus.isGranted) {
+        print("Location permissions granted!");
+      } else {
+        print("Background location permission denied!");
+      }
+    } else {
+      print("Foreground location permission denied!");
     }
   }
 
@@ -194,6 +217,11 @@ class HomeScreenState extends State<HomeScreen>
     _mapService.setLocationSettings();
     trackingPoints.clear();
 
+    FlutterForegroundTask.checkNotificationPermission().then((status) {
+      if (status != NotificationPermission.granted) {
+        FlutterForegroundTask.requestNotificationPermission();
+      }
+    });
     await FlutterForegroundTask.saveData(key: 'is_tracking', value: 'true');
     await FlutterForegroundTask.saveData(key: 'is_paused', value: 'false');
     await FlutterForegroundTask.saveData(
@@ -217,36 +245,40 @@ class HomeScreenState extends State<HomeScreen>
   }
 
   void _startLocationUpdates() {
-    timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      if (!isPaused) {
-        LocationService().trackingDuration++;
-        _saveTimer();
+    try {
+      timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+        if (!isPaused) {
+          LocationService().trackingDuration++;
+          _saveTimer();
 
-        final position = await LocationService.getCurrentLocation();
-        if (position != null) {
-          setState(() {
-            currentPosition = position;
-            LatLng point = LatLng(position.latitude, position.longitude);
-            trackingPoints.add(point);
-            _mapService.addPolylinePoint(point);
-          });
+          final position = await LocationService.getCurrentLocation();
+          if (position != null) {
+            setState(() {
+              currentPosition = position;
+              LatLng point = LatLng(position.latitude, position.longitude);
+              trackingPoints.add(point);
+              _mapService.addPolylinePoint(point);
+            });
 
-          await FlutterForegroundTask.saveData(
-              key: 'last_location', value: json.encode(position.toJson()));
+            await FlutterForegroundTask.saveData(
+                key: 'last_location', value: json.encode(position.toJson()));
 
-          String notificationText =
-              'Timer: ${LocationService().formatDuration()}\n'
-              'Tracking in progress\n'
-              'Lat: ${position.latitude.toStringAsFixed(6)}, '
-              'Lng: ${position.longitude.toStringAsFixed(6)}';
+            String notificationText =
+                'Timer: ${LocationService().formatDuration()}\n'
+                'Tracking in progress\n'
+                'Lat: ${position.latitude.toStringAsFixed(6)}, '
+                'Lng: ${position.longitude.toStringAsFixed(6)}';
 
-          await FlutterForegroundTask.updateService(
-            notificationTitle: 'Location Tracking Active',
-            notificationText: notificationText,
-          );
+            await FlutterForegroundTask.updateService(
+              notificationTitle: 'Location Tracking Active',
+              notificationText: notificationText,
+            );
+          }
         }
-      }
-    });
+      });
+    } catch (e) {
+      print("-----------error: $e");
+    }
   }
 
   void _pauseTracking() async {
