@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'location_service.dart';
 
 @pragma('vm:entry-point')
@@ -14,11 +15,29 @@ void startCallback() {
 class LocationTrackingHandler extends TaskHandler {
   StreamSubscription<Position>? positionStream;
 
-  ////
+  // Request overlay permission function
+  void requestOverlayPermission() async {
+    final permissionStatus = await Permission.systemAlertWindow.status;
+
+    if (!permissionStatus.isGranted) {
+      final result = await Permission.systemAlertWindow.request();
+
+      if (result.isGranted) {
+        print("Overlay permission granted");
+      } else {
+        print("Overlay permission denied");
+      }
+    } else {
+      print("Overlay permission already granted");
+    }
+  }
+
   // Start the foreground task
-  ////
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    // Request overlay permission before starting the task
+    requestOverlayPermission();
+
     // Initialize anything needed for the background task
     if (kDebugMode) {
       print("Background location tracking started");
@@ -51,9 +70,7 @@ class LocationTrackingHandler extends TaskHandler {
     }
   }
 
-  ////
   // Handle the event
-  ////
   Future<void> onEvent(DateTime timestamp, SendPort? sendPort) async {
     try {
       final position = await LocationService.getCurrentLocation();
@@ -69,9 +86,7 @@ class LocationTrackingHandler extends TaskHandler {
     }
   }
 
-  ////
   // Stop the foreground task
-  ////
   @override
   Future<void> onDestroy(DateTime timestamp) async {
     // Clean up location stream subscription
@@ -81,9 +96,7 @@ class LocationTrackingHandler extends TaskHandler {
     }
   }
 
-  ////
   // Handle the repeat event
-  ////
   @override
   void onRepeatEvent(DateTime timestamp) {
     // Repeated events can be handled here if necessary
@@ -92,9 +105,7 @@ class LocationTrackingHandler extends TaskHandler {
     }
   }
 
-  ////
   // Initialize the foreground task
-  ////
   void initForegroundTask() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -102,11 +113,13 @@ class LocationTrackingHandler extends TaskHandler {
         channelName: 'Location Tracking Service',
         channelDescription:
             'This notification appears when location is being tracked',
-        channelImportance: NotificationChannelImportance.HIGH,
-        priority: NotificationPriority.LOW,
+        channelImportance: NotificationChannelImportance.MIN,
+        priority: NotificationPriority.MIN,
         visibility: NotificationVisibility.VISIBILITY_PRIVATE,
         enableVibration: false,
         playSound: false,
+        showWhen: false,
+        onlyAlertOnce: true,
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: true,

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:location_service/service/location_service.dart';
 
 class MapService {
@@ -11,15 +13,49 @@ class MapService {
   final PolylinePoints _polylinePoints = PolylinePoints();
   final LocationService _locationService = LocationService();
   StreamSubscription<Position>? _positionStreamSubscription;
+  List<LatLng> trackingPoints = [];
 
   void onMapCreated(GoogleMapController controller) {
     mapController = controller;
+    _loadSavedTrackingData();
+  }
+
+  Future<void> _loadSavedTrackingData() async {
+    final String? trackingData =
+        await FlutterForegroundTask.getData(key: 'last_tracking_data');
+    if (trackingData != null) {
+      final decodedData = json.decode(trackingData);
+      final List<dynamic> points = decodedData['points'];
+
+      List<LatLng> savedPoints = points
+          .map((point) =>
+              LatLng(point['latitude'] as double, point['longitude'] as double))
+          .toList();
+
+      if (savedPoints.isNotEmpty) {
+        _polylines.add(Polyline(
+          polylineId: const PolylineId('saved_route'),
+          color: const Color.fromARGB(255, 0, 128, 4),
+          width: 5,
+          points: savedPoints,
+          jointType: JointType.round,
+        ));
+
+        fitBounds(savedPoints);
+      }
+    }
   }
 
   Future<void> setLocationSettings() async {
+    // Clear previous tracking data
+    _polylines.clear();
+    trackingPoints.clear();
+
     Position? position = await LocationService.getCurrentLocation();
     if (position != null) {
-      addPolylinePoint(LatLng(position.latitude, position.longitude));
+      final latLng = LatLng(position.latitude, position.longitude);
+      addPolylinePoint(latLng);
+      trackingPoints.add(latLng);
     }
   }
 
@@ -39,8 +75,29 @@ class MapService {
     _positionStreamSubscription =
         Geolocator.getPositionStream(locationSettings: locationSettings)
             .listen((Position position) {
-      addPolylinePoint(LatLng(position.latitude, position.longitude));
+      final latLng = LatLng(position.latitude, position.longitude);
+      addPolylinePoint(latLng);
+      trackingPoints.add(latLng);
     });
+  }
+
+  Future<void> saveTrackingData() async {
+    if (trackingPoints.isEmpty) return;
+
+    List<Map<String, double>> points = trackingPoints
+        .map((point) =>
+            {'latitude': point.latitude, 'longitude': point.longitude})
+        .toList();
+
+    String trackingData = json.encode({
+      'points': points,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+
+    await FlutterForegroundTask.saveData(
+      key: 'last_tracking_data',
+      value: trackingData,
+    );
   }
 
   Future<List<LatLng>> getPolylinePoints(
@@ -75,7 +132,7 @@ class MapService {
         color: const Color.fromARGB(255, 0, 128, 4),
         width: 5,
         points: [position],
-        jointType: JointType.mitered,
+        jointType: JointType.round,
       ));
     } else {
       final polyline = _polylines.first;

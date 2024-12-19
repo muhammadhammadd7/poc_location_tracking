@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'home.dart';
+import 'package:overlay_support/overlay_support.dart';
+import 'home_screen.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const OverlaySupport.global(child: MyApp()));
 }
 
 class MyApp extends StatelessWidget {

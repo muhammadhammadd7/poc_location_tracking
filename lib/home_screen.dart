@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:location_service/saved_trail_screen.dart';
 import 'service/foreground_task_handler.dart';
 import 'service/location_service.dart';
 import 'service/map_service.dart';
@@ -28,6 +28,8 @@ class HomeScreenState extends State<HomeScreen>
   late AnimationController _controller;
   late Animation<double> _widthAnimation;
   bool isRowOpen = false;
+  List<LatLng> trackingPoints = [];
+  Set<Marker> markers = {};
 
   @override
   void initState() {
@@ -63,12 +65,9 @@ class HomeScreenState extends State<HomeScreen>
       setState(() {
         isPaused = !isPaused;
         if (isPaused) {
-          // Pause recording
-          timer?.cancel();
-          FlutterForegroundTask.stopService();
+          _pauseTracking();
         } else {
-          // Resume recording
-          _startTracking();
+          _resumeTracking();
         }
       });
     }
@@ -83,9 +82,6 @@ class HomeScreenState extends State<HomeScreen>
     }
   }
 
-  ////
-  // Request permissions for Android and IOS
-  ////
   void requestPermissionsAndroid() async {
     await LocationService().requestPermissionForAndroid();
   }
@@ -94,9 +90,6 @@ class HomeScreenState extends State<HomeScreen>
     await LocationService().requestPermissionsForiOS();
   }
 
-  ////
-  // Initialize the event stream
-  ////
   void _initializeEventStream() {
     _eventSubscription = FlutterForegroundTask.receivePort?.listen((data) {
       if (data is Map) {
@@ -105,17 +98,18 @@ class HomeScreenState extends State<HomeScreen>
             LocationService().trackingDuration = data['timer'] as int;
           });
         }
-        if (data.containsKey('location')) {
+        if (data.containsKey('location') && !isPaused) {
           final locationMap = data['location'] as Map<String, dynamic>;
           setState(() {
             currentPosition = Position.fromMap(locationMap);
             lastStoredPosition = currentPosition;
 
-            // Update the polyline coordinates using MapService
-            _mapService.addPolylinePoint(LatLng(
-              currentPosition!.latitude,
-              currentPosition!.longitude,
-            ));
+            if (currentPosition != null) {
+              LatLng point =
+                  LatLng(currentPosition!.latitude, currentPosition!.longitude);
+              trackingPoints.add(point);
+              _mapService.addPolylinePoint(point);
+            }
           });
         }
       }
@@ -130,23 +124,16 @@ class HomeScreenState extends State<HomeScreen>
       if (isTracking) {
         FlutterForegroundTask.saveData(
             key: 'background_tracking', value: 'true');
+        FlutterForegroundTask.saveData(
+            key: 'is_paused', value: isPaused.toString());
       }
     }
   }
 
   Future<void> initializeServices() async {
-    ////
-    // Initialize the foreground task configuration
-    ////
-    LocationTrackingHandler().initForegroundTask();
-    ////
-    // Start the foreground service
-    ////
-    await FlutterForegroundTask.startService(
-      notificationTitle: 'Location Tracking Active',
-      notificationText: 'Initializing...',
-      callback: startCallback,
-    );
+    LocationTrackingHandler handler = LocationTrackingHandler();
+    handler.initForegroundTask();
+    handler.requestOverlayPermission();
   }
 
   Future<void> _loadLastStoredLocation() async {
@@ -156,12 +143,12 @@ class HomeScreenState extends State<HomeScreen>
       final locationMap = json.decode(locationData);
       setState(() {
         lastStoredPosition = Position.fromMap(locationMap);
-
-        // Add last stored position to polyline using MapService
-        _mapService.addPolylinePoint(LatLng(
-          lastStoredPosition!.latitude,
-          lastStoredPosition!.longitude,
-        ));
+        if (lastStoredPosition != null) {
+          LatLng point = LatLng(
+              lastStoredPosition!.latitude, lastStoredPosition!.longitude);
+          trackingPoints.add(point);
+          _mapService.addPolylinePoint(point);
+        }
       });
     }
   }
@@ -181,14 +168,34 @@ class HomeScreenState extends State<HomeScreen>
   Future<void> _checkTrackingStatus() async {
     final trackingData =
         await FlutterForegroundTask.getData<String>(key: 'is_tracking');
+    final pausedData =
+        await FlutterForegroundTask.getData<String>(key: 'is_paused');
+
     bool wasTracking = trackingData == 'true';
+    bool wasPaused = pausedData == 'true';
+
     if (wasTracking) {
-      _startTracking();
+      setState(() {
+        isTracking = true;
+        isRecording = true;
+        isPaused = wasPaused;
+      });
+
+      if (!wasPaused) {
+        _startTracking();
+      } else {
+        _updateNotificationForPausedState();
+      }
     }
   }
 
   void _startTracking() async {
+    // Clear previous tracking data
+    _mapService.setLocationSettings();
+    trackingPoints.clear();
+
     await FlutterForegroundTask.saveData(key: 'is_tracking', value: 'true');
+    await FlutterForegroundTask.saveData(key: 'is_paused', value: 'false');
     await FlutterForegroundTask.saveData(
         key: 'start_time', value: DateTime.now().toIso8601String());
 
@@ -199,125 +206,169 @@ class HomeScreenState extends State<HomeScreen>
       LocationService().trackingDuration = 0;
     });
 
-    // Start foreground service
     await FlutterForegroundTask.startService(
       notificationTitle: 'Location Tracking Active',
-      notificationText: 'Timer: 00:00:00\nWaiting for location...',
+      notificationText: 'Timer: 00:00:00\nTracking in progress...',
       callback: startCallback,
     );
 
     _initializeEventStream();
-
-    timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      LocationService().trackingDuration++;
-      _saveTimer();
-
-      final position = await LocationService.getCurrentLocation();
-      if (position != null) {
-        setState(() {
-          currentPosition = position;
-
-          // Update polyline coordinates using MapService
-          _mapService
-              .addPolylinePoint(LatLng(position.latitude, position.longitude));
-        });
-
-        final locationJson = json.encode(position.toJson());
-        await FlutterForegroundTask.saveData(
-            key: 'last_location', value: locationJson);
-        setState(() {
-          lastStoredPosition = position;
-        });
-
-        String notificationText =
-            'Timer: ${LocationService().formatDuration()}\n'
-            'Latitude: ${position.latitude.toStringAsFixed(8)}\n'
-            'Longitude: ${position.longitude.toStringAsFixed(8)}';
-
-        await FlutterForegroundTask.updateService(
-          notificationTitle: 'Location Tracking Active',
-          notificationText: notificationText,
-        );
-      }
-    });
+    _startLocationUpdates();
   }
 
-  void _resumeTracking() async {
-    // Get current location and add marker
-    final position = await LocationService.getCurrentLocation();
-    if (position != null) {
-      setState(() {
-        currentPosition = position;
-        lastStoredPosition = position;
-        isTracking = true;
-        isPaused = false;
-
-        // Add marker and polyline point at resume position
-        _mapService
-            .addPolylinePoint(LatLng(position.latitude, position.longitude));
-      });
-
-      // Save current location
-      final locationJson = json.encode(position.toJson());
-      await FlutterForegroundTask.saveData(
-          key: 'last_location', value: locationJson);
-
-      // Update tracking status
-      await FlutterForegroundTask.saveData(key: 'is_tracking', value: 'true');
-
-      // Resume timer
-      timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+  void _startLocationUpdates() {
+    timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (!isPaused) {
         LocationService().trackingDuration++;
         _saveTimer();
 
-        final newPosition = await LocationService.getCurrentLocation();
-        if (newPosition != null) {
+        final position = await LocationService.getCurrentLocation();
+        if (position != null) {
           setState(() {
-            currentPosition = newPosition;
-            _mapService.addPolylinePoint(
-                LatLng(newPosition.latitude, newPosition.longitude));
+            currentPosition = position;
+            LatLng point = LatLng(position.latitude, position.longitude);
+            trackingPoints.add(point);
+            _mapService.addPolylinePoint(point);
           });
 
-          final newLocationJson = json.encode(newPosition.toJson());
           await FlutterForegroundTask.saveData(
-              key: 'last_location', value: newLocationJson);
+              key: 'last_location', value: json.encode(position.toJson()));
 
           String notificationText =
               'Timer: ${LocationService().formatDuration()}\n'
-              'Latitude: ${newPosition.latitude.toStringAsFixed(8)}\n'
-              'Longitude: ${newPosition.longitude.toStringAsFixed(8)}';
+              'Tracking in progress\n'
+              'Lat: ${position.latitude.toStringAsFixed(6)}, '
+              'Lng: ${position.longitude.toStringAsFixed(6)}';
 
           await FlutterForegroundTask.updateService(
             notificationTitle: 'Location Tracking Active',
             notificationText: notificationText,
           );
         }
+      }
+    });
+  }
+
+  void _pauseTracking() async {
+    setState(() {
+      isPaused = true;
+    });
+
+    await FlutterForegroundTask.saveData(key: 'is_paused', value: 'true');
+    _updateNotificationForPausedState();
+  }
+
+  void _updateNotificationForPausedState() async {
+    String notificationText = 'Timer: ${LocationService().formatDuration()}\n'
+        'Tracking paused';
+
+    await FlutterForegroundTask.updateService(
+      notificationTitle: 'Location Tracking Paused',
+      notificationText: notificationText,
+    );
+  }
+
+  void _resumeTracking() async {
+    setState(() {
+      isPaused = false;
+    });
+
+    await FlutterForegroundTask.saveData(key: 'is_paused', value: 'false');
+
+    final position = await LocationService.getCurrentLocation();
+    if (position != null) {
+      setState(() {
+        currentPosition = position;
+        LatLng point = LatLng(position.latitude, position.longitude);
+        trackingPoints.add(point);
+        _mapService.addPolylinePoint(point);
       });
+
+      String notificationText = 'Timer: ${LocationService().formatDuration()}\n'
+          'Tracking resumed\n'
+          'Lat: ${position.latitude.toStringAsFixed(6)}, '
+          'Lng: ${position.longitude.toStringAsFixed(6)}';
+
+      await FlutterForegroundTask.updateService(
+        notificationTitle: 'Location Tracking Active',
+        notificationText: notificationText,
+      );
     }
   }
 
   void _stopTracking() async {
-    // Save final timer and location before stopping
     await _saveTimer();
-    if (currentPosition != null) {
-      final locationJson = json.encode(currentPosition!.toJson());
-      await FlutterForegroundTask.saveData(
-          key: 'last_location', value: locationJson);
-    }
+    await _saveTrackingData();
 
     await FlutterForegroundTask.saveData(key: 'is_tracking', value: 'false');
+    await FlutterForegroundTask.saveData(key: 'is_paused', value: 'false');
     await FlutterForegroundTask.saveData(
         key: 'background_tracking', value: 'false');
 
     setState(() {
       isTracking = false;
+      isRecording = false;
       isPaused = false;
+      trackingPoints.clear();
+      markers.clear();
     });
 
     await FlutterForegroundTask.stopService();
     _eventSubscription?.cancel();
     timer?.cancel();
     timer = null;
+
+    // Navigate to SavedTrailScreen after stopping tracking
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SavedTrailScreen(),
+      ),
+    );
+  }
+
+  Future<void> _saveTrackingData() async {
+    if (trackingPoints.isNotEmpty) {
+      // Add start and end markers
+      LatLng startPoint = trackingPoints.first;
+      LatLng endPoint = trackingPoints.last;
+
+      final startMarker = Marker(
+        markerId: const MarkerId('start'),
+        position: startPoint,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+      );
+
+      final endMarker = Marker(
+        markerId: const MarkerId('end'),
+        position: endPoint,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      );
+
+      // Convert points to serializable format
+      List<Map<String, double>> points = trackingPoints
+          .map((point) =>
+              {'latitude': point.latitude, 'longitude': point.longitude})
+          .toList();
+
+      // Save complete tracking data including markers
+      String trackingData = json.encode({
+        'points': points,
+        'duration': LocationService().trackingDuration,
+        'timestamp': DateTime.now().toIso8601String(),
+        'startMarker': {
+          'latitude': startPoint.latitude,
+          'longitude': startPoint.longitude
+        },
+        'endMarker': {
+          'latitude': endPoint.latitude,
+          'longitude': endPoint.longitude
+        }
+      });
+
+      await FlutterForegroundTask.saveData(
+          key: 'last_tracking_data', value: trackingData);
+    }
   }
 
   @override
@@ -338,8 +389,10 @@ class HomeScreenState extends State<HomeScreen>
       child: WithForegroundTask(
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('Live Location Tracker'),
+            title: const Text('Location Tracker'),
             centerTitle: true,
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
           ),
           body: Stack(
             children: [
@@ -347,15 +400,13 @@ class HomeScreenState extends State<HomeScreen>
                 initialCameraPosition: CameraPosition(
                   target: currentPosition != null
                       ? LatLng(
-                          currentPosition!.latitude,
-                          currentPosition!.longitude,
-                        )
-                      : const LatLng(
-                          37.4219999, -122.0840575), // Default location
+                          currentPosition!.latitude, currentPosition!.longitude)
+                      : const LatLng(37.4219999, -122.0840575),
                   zoom: 15,
                 ),
                 onMapCreated: _mapService.onMapCreated,
                 polylines: _mapService.polylines,
+                markers: markers,
                 myLocationEnabled: true,
               ),
               if (isRecording)
@@ -380,7 +431,6 @@ class HomeScreenState extends State<HomeScreen>
                                 child: GestureDetector(
                                   onHorizontalDragEnd: (details) {
                                     if (details.primaryVelocity! < 0) {
-                                      // Left swipe
                                       closeRow();
                                     }
                                   },
@@ -391,21 +441,26 @@ class HomeScreenState extends State<HomeScreen>
                                           height: double.infinity,
                                           child: TextButton(
                                             onPressed: () {
-                                              if (kDebugMode) {
-                                                print("Resume button pressed");
+                                              if (isPaused) {
+                                                _resumeTracking();
+                                              } else {
+                                                _pauseTracking();
                                               }
-                                              _resumeTracking();
                                             },
                                             style: TextButton.styleFrom(
-                                              backgroundColor: Colors.green,
+                                              backgroundColor: isPaused
+                                                  ? Colors.green
+                                                  : Colors.orange,
                                               foregroundColor: Colors.white,
                                               shape:
                                                   const RoundedRectangleBorder(
                                                 borderRadius: BorderRadius.zero,
                                               ),
                                             ),
-                                            child: const Text("Resume",
-                                                style: TextStyle(fontSize: 16)),
+                                            child: Text(
+                                                isPaused ? "Resume" : "Pause",
+                                                style: const TextStyle(
+                                                    fontSize: 16)),
                                           ),
                                         ),
                                       ),
@@ -413,12 +468,7 @@ class HomeScreenState extends State<HomeScreen>
                                         child: SizedBox(
                                           height: double.infinity,
                                           child: TextButton(
-                                            onPressed: () {
-                                              if (kDebugMode) {
-                                                print("Finish button pressed");
-                                              }
-                                              _stopTracking();
-                                            },
+                                            onPressed: _stopTracking,
                                             style: TextButton.styleFrom(
                                               backgroundColor: Colors.red,
                                               foregroundColor: Colors.white,
@@ -444,16 +494,21 @@ class HomeScreenState extends State<HomeScreen>
                           : GestureDetector(
                               onTap: toggleRow,
                               child: Container(
-                                  width: 60,
-                                  height: 60,
-                                  decoration: const BoxDecoration(
-                                    color: Color.fromARGB(255, 255, 255, 255),
-                                    borderRadius: BorderRadius.horizontal(
-                                      right: Radius.circular(30),
-                                    ),
+                                width: 60,
+                                height: 60,
+                                decoration: const BoxDecoration(
+                                  color: Color.fromARGB(255, 255, 255, 255),
+                                  borderRadius: BorderRadius.horizontal(
+                                    right: Radius.circular(30),
                                   ),
-                                  child: const Icon(Icons.fiber_manual_record,
-                                      color: Colors.red)),
+                                ),
+                                child: Icon(
+                                  isPaused ? Icons.play_arrow : Icons.pause,
+                                  color:
+                                      isPaused ? Colors.green : Colors.orange,
+                                  size: 30,
+                                ),
+                              ),
                             ),
                     );
                   },
@@ -508,9 +563,7 @@ class HomeScreenState extends State<HomeScreen>
                             )
                           : const SizedBox.shrink(),
                     ),
-                    const SizedBox(
-                      height: 20,
-                    ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
