@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'service/map_service.dart';
+import '../service/map_service.dart';
 
 class SavedTrailScreen extends StatefulWidget {
   const SavedTrailScreen({super.key});

@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:location_service/saved_trail_screen.dart';
+import 'package:location_service/presentation/saved_trail_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'service/foreground_task_handler.dart';
-import 'service/location_service.dart';
-import 'service/map_service.dart';
+import '../service/foreground_task_handler.dart';
+import '../service/location_service.dart';
+import '../service/map_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -238,6 +238,18 @@ class HomeScreenState extends State<HomeScreen>
       notificationTitle: 'Location Tracking Active',
       notificationText: 'Timer: 00:00:00\nTracking in progress...',
       callback: startCallback,
+      notificationButtons: [
+        const NotificationButton(
+          id: 'pauseButton',
+          text: 'Pause',
+          textColor: Colors.orange,
+        ),
+        const NotificationButton(
+          id: 'finishButton',
+          text: 'Finish',
+          textColor: Colors.red,
+        ),
+      ],
     );
 
     _initializeEventStream();
@@ -272,6 +284,18 @@ class HomeScreenState extends State<HomeScreen>
             await FlutterForegroundTask.updateService(
               notificationTitle: 'Location Tracking Active',
               notificationText: notificationText,
+              notificationButtons: [
+                const NotificationButton(
+                  id: 'pauseButton',
+                  text: 'Pause',
+                  textColor: Colors.orange,
+                ),
+                const NotificationButton(
+                  id: 'finishButton',
+                  text: 'Finish',
+                  textColor: Colors.red,
+                ),
+              ],
             );
           }
         }
@@ -297,6 +321,18 @@ class HomeScreenState extends State<HomeScreen>
     await FlutterForegroundTask.updateService(
       notificationTitle: 'Location Tracking Paused',
       notificationText: notificationText,
+      notificationButtons: [
+        const NotificationButton(
+          id: 'resumeButton',
+          text: 'Resume',
+          textColor: Colors.green,
+        ),
+        const NotificationButton(
+          id: 'finishButton',
+          text: 'Finish',
+          textColor: Colors.red,
+        ),
+      ],
     );
   }
 
@@ -324,6 +360,18 @@ class HomeScreenState extends State<HomeScreen>
       await FlutterForegroundTask.updateService(
         notificationTitle: 'Location Tracking Active',
         notificationText: notificationText,
+        notificationButtons: [
+          const NotificationButton(
+            id: 'pauseButton',
+            text: 'Pause',
+            textColor: Colors.orange,
+          ),
+          const NotificationButton(
+            id: 'finishButton',
+            text: 'Finish',
+            textColor: Colors.red,
+          ),
+        ],
       );
     }
   }

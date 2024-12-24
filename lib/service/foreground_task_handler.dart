@@ -17,6 +17,48 @@ class LocationTrackingHandler extends TaskHandler {
   StreamSubscription<Position>? positionStream;
   bool isPaused = false;
 
+  // Function to stop and restart the service with updated notification settings
+  Future<void> updateNotification({
+    required Color color,
+    required String title,
+    required String text,
+    required List<NotificationButton> buttons,
+  }) async {
+    // Stop the current foreground service
+    await FlutterForegroundTask.stopService();
+
+    // Restart the foreground task with updated notification settings
+    FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: 'location_tracker',
+        channelName: 'Location Tracking Service',
+        channelDescription:
+            'This notification appears when location is being tracked',
+        priority: NotificationPriority.HIGH,
+        visibility: NotificationVisibility.VISIBILITY_PUBLIC,
+        playSound: false,
+        enableVibration: false,
+      ),
+      iosNotificationOptions: const IOSNotificationOptions(
+        showNotification: true,
+        playSound: false,
+      ),
+      foregroundTaskOptions: ForegroundTaskOptions(
+        eventAction: ForegroundTaskEventAction.repeat(5000),
+        autoRunOnBoot: true,
+        allowWakeLock: true,
+        allowWifiLock: true,
+      ),
+    );
+
+    // Restart the foreground service with the updated notification
+    await FlutterForegroundTask.startService(
+      notificationTitle: title,
+      notificationText: text,
+      notificationButtons: buttons,
+    );
+  }
+
   // Request overlay permission function
   void requestOverlayPermission() async {
     final permissionStatus = await Permission.systemAlertWindow.status;
@@ -25,12 +67,18 @@ class LocationTrackingHandler extends TaskHandler {
       final result = await Permission.systemAlertWindow.request();
 
       if (result.isGranted) {
-        print("Overlay permission granted");
+        if (kDebugMode) {
+          print("Overlay permission granted");
+        }
       } else {
-        print("Overlay permission denied");
+        if (kDebugMode) {
+          print("Overlay permission denied");
+        }
       }
     } else {
-      print("Overlay permission already granted");
+      if (kDebugMode) {
+        print("Overlay permission already granted");
+      }
     }
   }
 
@@ -59,8 +107,8 @@ class LocationTrackingHandler extends TaskHandler {
 
         // Update the foreground notification with the new location data
         String notificationText =
-            'Latitude: ${position.latitude.toStringAsFixed(8)}\n'
-            'Longitude: ${position.longitude.toStringAsFixed(8)}';
+            'Latitude: ${position.latitude.toStringAsFixed(5)}\n'
+            'Longitude: ${position.longitude.toStringAsFixed(5)}';
         await FlutterForegroundTask.updateService(
           notificationTitle: 'Location Tracking Active',
           notificationText: notificationText,
@@ -114,35 +162,54 @@ class LocationTrackingHandler extends TaskHandler {
   }
 
   // Handle button press events
-  @override
-  void onButtonPressed(String id) {
+  void onButtonPressed(String id) async {
     if (id == 'pauseButton') {
       isPaused = true;
-      FlutterForegroundTask.saveData(key: 'is_paused', value: 'true');
-      FlutterForegroundTask.updateService(
-        notificationTitle: 'Location Tracking Paused',
-        notificationText: 'Tracking is paused',
-        notificationButtons: [
+      await FlutterForegroundTask.saveData(key: 'is_paused', value: 'true');
+      await updateNotification(
+        color: Colors.orange,
+        title: 'Location Tracking Paused',
+        text: 'Tracking is paused',
+        buttons: [
           const NotificationButton(
             id: 'resumeButton',
             text: 'Resume',
             textColor: Colors.green,
           ),
+          const NotificationButton(
+            id: 'finishButton',
+            text: 'Finish',
+            textColor: Colors.red,
+          ),
         ],
       );
     } else if (id == 'resumeButton') {
       isPaused = false;
-      FlutterForegroundTask.saveData(key: 'is_paused', value: 'false');
-      FlutterForegroundTask.updateService(
-        notificationTitle: 'Location Tracking Active',
-        notificationText: 'Tracking resumed...',
-        notificationButtons: [
+      await FlutterForegroundTask.saveData(key: 'is_paused', value: 'false');
+      await updateNotification(
+        color: Colors.green,
+        title: 'Location Tracking Active',
+        text: 'Tracking resumed...',
+        buttons: [
           const NotificationButton(
             id: 'pauseButton',
             text: 'Pause',
             textColor: Colors.orange,
           ),
+          const NotificationButton(
+            id: 'finishButton',
+            text: 'Finish',
+            textColor: Colors.red,
+          ),
         ],
+      );
+    } else if (id == 'finishButton') {
+      await FlutterForegroundTask.stopService();
+      await updateNotification(
+        color: Colors.red,
+        title: 'Location Tracking Finished',
+        text: 'Tracking is finished',
+        buttons: [],
       );
     }
   }
@@ -171,13 +238,6 @@ class LocationTrackingHandler extends TaskHandler {
         playSound: false,
         showWhen: false,
         onlyAlertOnce: true,
-        // notificationButtons: [
-        //   const NotificationButton(
-        //     id: 'pauseButton',
-        //     text: 'Pause',
-        //     textColor: Colors.red,
-        //   ),
-        // ],
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: true,
