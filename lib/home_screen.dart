@@ -136,18 +136,45 @@ class HomeScreenState extends State<HomeScreen>
     handler.requestOverlayPermission();
   }
 
+  // Future<void> _loadLastStoredLocation() async {
+  //   final locationData =
+  //       await FlutterForegroundTask.getData<String>(key: 'last_location');
+  //   if (locationData != null) {
+  //     final locationMap = json.decode(locationData);
+  //     setState(() {
+  //       lastStoredPosition = Position.fromMap(locationMap);
+  //       if (lastStoredPosition != null) {
+  //         LatLng point = LatLng(
+  //             lastStoredPosition!.latitude, lastStoredPosition!.longitude);
+  //         trackingPoints.add(point);
+  //         _mapService.addPolylinePoint(point);
+  //       }
+  //     });
+  //   }
+  // }
+
   Future<void> _loadLastStoredLocation() async {
     final locationData =
-        await FlutterForegroundTask.getData<String>(key: 'last_location');
+        await FlutterForegroundTask.getData<String>(key: 'tracking_points');
     if (locationData != null) {
       final locationMap = json.decode(locationData);
+      print('================================================================');
+      print(locationMap);
+      print('================================================================');
       setState(() {
-        lastStoredPosition = Position.fromMap(locationMap);
-        if (lastStoredPosition != null) {
-          LatLng point = LatLng(
-              lastStoredPosition!.latitude, lastStoredPosition!.longitude);
-          trackingPoints.add(point);
-          _mapService.addPolylinePoint(point);
+        // lastStoredPosition = Position.fromMap(locationMap);
+        if (locationMap != null) {
+          trackingPoints = (locationMap as List)
+              .map((point) => LatLng(point['latitude'], point['longitude']))
+              .toList();
+          print('===== | trackingPoints.length | =====');
+          print(trackingPoints.length);
+          print('===== | trackingPoints.length | =====');
+          // LatLng point =
+          // LatLng(
+          //     lastStoredPosition!.latitude, lastStoredPosition!.longitude);
+          // trackingPoints.add(point);
+          // _mapService.addPolylinePoint(point);
         }
       });
     }
@@ -228,9 +255,13 @@ class HomeScreenState extends State<HomeScreen>
             currentPosition = position;
             LatLng point = LatLng(position.latitude, position.longitude);
             trackingPoints.add(point);
+            trackingPoints.toSet().toList();
             _mapService.addPolylinePoint(point);
           });
-
+          await FlutterForegroundTask.saveData(
+            key: 'tracking_points',
+            value: json.encode(trackingPoints),
+          );
           await FlutterForegroundTask.saveData(
               key: 'last_location', value: json.encode(position.toJson()));
 
