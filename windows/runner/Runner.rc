@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "location_service" "\0"
+            VALUE "FileDescription", "map_integration" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "location_service" "\0"
+            VALUE "InternalName", "map_integration" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2024 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "location_service.exe" "\0"
-            VALUE "ProductName", "location_service" "\0"
+            VALUE "OriginalFilename", "map_integration.exe" "\0"
+            VALUE "ProductName", "map_integration" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

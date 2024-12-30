@@ -1,6 +1,6 @@
 {
-    "name": "location_service",
-    "short_name": "location_service",
+    "name": "map_integration",
+    "short_name": "map_integration",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
