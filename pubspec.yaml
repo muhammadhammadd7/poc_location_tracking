@@ -13,6 +13,7 @@ dependencies:
     sdk: flutter
   google_maps_flutter: ^2.2.0 # Add the Google Maps Flutter plugin
   geolocator: ^9.0.2        # Add the Geolocator plugin for location services
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
