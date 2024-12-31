@@ -30,7 +30,7 @@ class _GeofenceMapState extends State<GeofenceMap> {
   late GoogleMapController _mapController;
   final Set<Circle> _circles = {};
   final Set<Marker> _markers = {};
-  bool _isInitialized = false; // Flag to indicate initialization
+  bool _isInitialized = false;
 
   final List<Map<String, dynamic>> _locations = [
     {'label': 'A', 'latLng': const LatLng(24.922022, 67.093269)},
@@ -54,7 +54,7 @@ class _GeofenceMapState extends State<GeofenceMap> {
       _calculateCircle();
       _initializeMapElements();
       setState(() {
-        _isInitialized = true; // Mark as initialized
+        _isInitialized = true;
       });
     } else if (status.isDenied || status.isPermanentlyDenied) {
       _showPermissionDeniedDialog();
@@ -120,7 +120,7 @@ class _GeofenceMapState extends State<GeofenceMap> {
         Marker(
           markerId: MarkerId(location['label']),
           position: location['latLng'],
-          infoWindow: InfoWindow(title: location['label']),
+          infoWindow: InfoWindow(title: ''),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
         ),
       );
@@ -161,7 +161,7 @@ class _GeofenceMapState extends State<GeofenceMap> {
     }
 
     if (isWithinGeofence) {
-      print("Attendance Marked"); // Print to terminal
+      print("Attendance Marked");
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Attendance Marked Successfully!')),
       );
@@ -197,9 +197,7 @@ class _GeofenceMapState extends State<GeofenceMap> {
         title: const Text('Geofence Map'),
       ),
       body: !_isInitialized
-          ? const Center(
-              child:
-                  CircularProgressIndicator()) // Show loading until initialized
+          ? const Center(child: CircularProgressIndicator())
           : Stack(
               children: [
                 GoogleMap(
@@ -212,21 +210,22 @@ class _GeofenceMapState extends State<GeofenceMap> {
                   myLocationEnabled: true,
                   zoomControlsEnabled: false,
                   myLocationButtonEnabled: false,
+                  mapToolbarEnabled:
+                      false, // This removes the direction and Google Maps icons
                   onMapCreated: (controller) {
                     _mapController = controller;
                   },
                 ),
                 Positioned(
                   bottom: 20,
-                  left: 50,
-                  right: 50,
+                  left: 60,
+                  right: 60,
                   child: ElevatedButton(
                     onPressed: _checkGeofence,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color.fromARGB(255, 21, 99, 23),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                            10), // Reduce the radius value here
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                     child: const Text(
