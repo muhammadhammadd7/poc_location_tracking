@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'utils/marker_helper.dart';
 
 void main() {
   runApp(const MyApp());
@@ -52,7 +53,7 @@ class _GeofenceMapState extends State<GeofenceMap> {
 
     if (status.isGranted) {
       _calculateCircle();
-      _initializeMapElements();
+      await _initializeMapElements();
       setState(() {
         _isInitialized = true;
       });
@@ -114,14 +115,15 @@ class _GeofenceMapState extends State<GeofenceMap> {
     _radius = maxDistance + 100;
   }
 
-  void _initializeMapElements() {
+  Future<void> _initializeMapElements() async {
     for (var location in _locations) {
+      final customIcon = await createCustomMarkerBitmap(location['label']);
+
       _markers.add(
         Marker(
           markerId: MarkerId(location['label']),
           position: location['latLng'],
-          infoWindow: InfoWindow(title: ''),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          icon: customIcon,
         ),
       );
 
@@ -210,16 +212,15 @@ class _GeofenceMapState extends State<GeofenceMap> {
                   myLocationEnabled: true,
                   zoomControlsEnabled: false,
                   myLocationButtonEnabled: false,
-                  mapToolbarEnabled:
-                      false, // This removes the direction and Google Maps icons
+                  mapToolbarEnabled: false,
                   onMapCreated: (controller) {
                     _mapController = controller;
                   },
                 ),
                 Positioned(
                   bottom: 20,
-                  left: 60,
-                  right: 60,
+                  left: 100,
+                  right: 100,
                   child: ElevatedButton(
                     onPressed: _checkGeofence,
                     style: ElevatedButton.styleFrom(
