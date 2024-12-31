@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -158,18 +159,32 @@ class HomeScreenState extends State<HomeScreen>
         await FlutterForegroundTask.getData<String>(key: 'tracking_points');
     if (locationData != null) {
       final locationMap = json.decode(locationData);
-      print('================================================================');
-      print(locationMap);
-      print('================================================================');
+      if (kDebugMode) {
+        print(
+            '================================================================');
+      }
+      if (kDebugMode) {
+        print(locationMap);
+      }
+      if (kDebugMode) {
+        print(
+            '================================================================');
+      }
       setState(() {
         // lastStoredPosition = Position.fromMap(locationMap);
         if (locationMap != null) {
           trackingPoints = (locationMap as List)
               .map((point) => LatLng(point['latitude'], point['longitude']))
               .toList();
-          print('===== | trackingPoints.length | =====');
-          print(trackingPoints.length);
-          print('===== | trackingPoints.length | =====');
+          if (kDebugMode) {
+            print('===== | trackingPoints.length | =====');
+          }
+          if (kDebugMode) {
+            print(trackingPoints.length);
+          }
+          if (kDebugMode) {
+            print('===== | trackingPoints.length | =====');
+          }
           // LatLng point =
           // LatLng(
           //     lastStoredPosition!.latitude, lastStoredPosition!.longitude);

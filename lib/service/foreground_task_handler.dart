@@ -23,12 +23,18 @@ class LocationTrackingHandler extends TaskHandler {
       final result = await Permission.systemAlertWindow.request();
 
       if (result.isGranted) {
-        print("Overlay permission granted");
+        if (kDebugMode) {
+          print("Overlay permission granted");
+        }
       } else {
-        print("Overlay permission denied");
+        if (kDebugMode) {
+          print("Overlay permission denied");
+        }
       }
     } else {
-      print("Overlay permission already granted");
+      if (kDebugMode) {
+        print("Overlay permission already granted");
+      }
     }
   }
 
