@@ -30,8 +30,7 @@ class _GeofenceMapState extends State<GeofenceMap> {
   late GoogleMapController _mapController;
   final Set<Circle> _circles = {};
   final Set<Marker> _markers = {};
-  LatLng? _currentPosition;
-  bool _isButtonEnabled = false;
+  bool _isInitialized = false; // Flag to indicate initialization
 
   final List<Map<String, dynamic>> _locations = [
     {'label': 'A', 'latLng': const LatLng(24.922022, 67.093269)},
@@ -41,7 +40,6 @@ class _GeofenceMapState extends State<GeofenceMap> {
 
   late LatLng _centerPoint;
   late double _radius;
-  late Stream<Position> _locationStream;
 
   @override
   void initState() {
@@ -55,7 +53,9 @@ class _GeofenceMapState extends State<GeofenceMap> {
     if (status.isGranted) {
       _calculateCircle();
       _initializeMapElements();
-      _startLocationUpdates();
+      setState(() {
+        _isInitialized = true; // Mark as initialized
+      });
     } else if (status.isDenied || status.isPermanentlyDenied) {
       _showPermissionDeniedDialog();
     }
@@ -138,45 +138,35 @@ class _GeofenceMapState extends State<GeofenceMap> {
     }
   }
 
-  void _startLocationUpdates() {
-    _locationStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
+  void _checkGeofence() async {
+    Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
     );
+    LatLng currentPosition = LatLng(position.latitude, position.longitude);
 
-    _locationStream.listen((Position position) {
-      setState(() {
-        _currentPosition = LatLng(position.latitude, position.longitude);
-      });
-      _checkGeofence(_currentPosition!);
-    });
-  }
+    bool isWithinGeofence = false;
 
-  void _checkGeofence(LatLng currentPosition) {
-    try {
-      bool isWithinGeofence = false;
+    for (var location in _locations) {
+      final distance = Geolocator.distanceBetween(
+        currentPosition.latitude,
+        currentPosition.longitude,
+        location['latLng'].latitude,
+        location['latLng'].longitude,
+      );
 
-      for (var location in _locations) {
-        final distance = Geolocator.distanceBetween(
-          currentPosition.latitude,
-          currentPosition.longitude,
-          location['latLng'].latitude,
-          location['latLng'].longitude,
-        );
-
-        if (distance <= 50) {
-          isWithinGeofence = true;
-          break;
-        }
+      if (distance <= 50) {
+        isWithinGeofence = true;
+        break;
       }
+    }
 
-      setState(() {
-        _isButtonEnabled = isWithinGeofence;
-      });
-    } catch (e) {
-      _showErrorDialog("Error checking geofence: $e");
+    if (isWithinGeofence) {
+      print("Attendance Marked"); // Print to terminal
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Attendance Marked Successfully!')),
+      );
+    } else {
+      _showErrorDialog("You are not within the premises!");
     }
   }
 
@@ -201,19 +191,15 @@ class _GeofenceMapState extends State<GeofenceMap> {
   }
 
   @override
-  void dispose() {
-    _locationStream.drain();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Geofence Map'),
       ),
-      body: _currentPosition == null
-          ? const Center(child: CircularProgressIndicator())
+      body: !_isInitialized
+          ? const Center(
+              child:
+                  CircularProgressIndicator()) // Show loading until initialized
           : Stack(
               children: [
                 GoogleMap(
@@ -224,6 +210,7 @@ class _GeofenceMapState extends State<GeofenceMap> {
                   circles: _circles,
                   markers: _markers,
                   myLocationEnabled: true,
+                  zoomControlsEnabled: false,
                   myLocationButtonEnabled: false,
                   onMapCreated: (controller) {
                     _mapController = controller;
@@ -231,13 +218,16 @@ class _GeofenceMapState extends State<GeofenceMap> {
                 ),
                 Positioned(
                   bottom: 20,
-                  left: 20,
-                  right: 20,
+                  left: 50,
+                  right: 50,
                   child: ElevatedButton(
-                    onPressed: _isButtonEnabled ? () {} : null,
+                    onPressed: _checkGeofence,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          _isButtonEnabled ? Colors.green : Colors.grey,
+                      backgroundColor: const Color.fromARGB(255, 21, 99, 23),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                            10), // Reduce the radius value here
+                      ),
                     ),
                     child: const Text(
                       'Mark Attendance',
