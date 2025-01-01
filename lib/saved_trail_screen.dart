@@ -5,7 +5,12 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'service/map_service.dart';
 
 class SavedTrailScreen extends StatefulWidget {
-  const SavedTrailScreen({super.key});
+  final Map<String, dynamic> trackingData;
+
+  const SavedTrailScreen({
+    super.key,
+    required this.trackingData,
+  });
 
   @override
   State<SavedTrailScreen> createState() => _SavedTrailScreenState();
@@ -21,62 +26,56 @@ class _SavedTrailScreenState extends State<SavedTrailScreen> {
   @override
   void initState() {
     super.initState();
-    _loadTrackingData();
+    _processTrackingData();
   }
 
-  Future<void> _loadTrackingData() async {
-    final String? trackingData =
-        await FlutterForegroundTask.getData(key: 'last_tracking_data');
+  void _processTrackingData() {
+    final List<dynamic> points = widget.trackingData['points'];
 
-    if (trackingData != null) {
-      final decodedData = json.decode(trackingData);
-      final List<dynamic> points = decodedData['points'];
+    setState(() {
+      _trackingPoints = points
+          .map((point) =>
+              LatLng(point['latitude'] as double, point['longitude'] as double))
+          .toList();
 
-      setState(() {
-        _trackingPoints = points
-            .map((point) => LatLng(
-                point['latitude'] as double, point['longitude'] as double))
-            .toList();
+      if (_trackingPoints.isNotEmpty) {
+        // Add polyline
+        _polylines.add(
+          Polyline(
+            polylineId: const PolylineId('saved_route'),
+            color: const Color.fromARGB(255, 0, 128, 4),
+            width: 5,
+            points: _trackingPoints,
+            jointType: JointType.round,
+          ),
+        );
 
-        if (_trackingPoints.isNotEmpty) {
-          // Add polyline
-          _polylines.add(
-            Polyline(
-              polylineId: const PolylineId('saved_route'),
-              color: const Color.fromARGB(255, 0, 128, 4),
-              width: 5,
-              points: _trackingPoints,
-              jointType: JointType.round,
-            ),
-          );
+        // Add start marker (green)
+        _markers.add(
+          Marker(
+            markerId: const MarkerId('start'),
+            position: _trackingPoints.first,
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueGreen),
+            infoWindow: const InfoWindow(title: 'Start Point'),
+          ),
+        );
 
-          // Add start marker (green)
-          _markers.add(
-            Marker(
-              markerId: const MarkerId('start'),
-              position: _trackingPoints.first,
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueGreen),
-              infoWindow: const InfoWindow(title: 'Start Point'),
-            ),
-          );
-
-          // Add end marker (red)
-          _markers.add(
-            Marker(
-              markerId: const MarkerId('end'),
-              position: _trackingPoints.last,
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueRed),
-              infoWindow: const InfoWindow(title: 'End Point'),
-            ),
-          );
-        }
-      });
-
-      if (_mapController != null && _trackingPoints.isNotEmpty) {
-        _mapService.fitBounds(_trackingPoints);
+        // Add end marker (red)
+        _markers.add(
+          Marker(
+            markerId: const MarkerId('end'),
+            position: _trackingPoints.last,
+            icon:
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            infoWindow: const InfoWindow(title: 'End Point'),
+          ),
+        );
       }
+    });
+
+    if (_mapController != null && _trackingPoints.isNotEmpty) {
+      _mapService.fitBounds(_trackingPoints);
     }
   }
 
@@ -90,8 +89,10 @@ class _SavedTrailScreenState extends State<SavedTrailScreen> {
         foregroundColor: Colors.white,
       ),
       body: GoogleMap(
-        initialCameraPosition: const CameraPosition(
-          target: LatLng(0, 0),
+        initialCameraPosition: CameraPosition(
+          target: _trackingPoints.isNotEmpty
+              ? _trackingPoints.first
+              : const LatLng(0, 0),
           zoom: 15,
         ),
         onMapCreated: (GoogleMapController controller) {
