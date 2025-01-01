@@ -344,7 +344,7 @@ class HomeScreenState extends State<HomeScreen>
 
   void _stopTracking() async {
     await _saveTimer();
-    await _saveTrackingData();
+    Map<String, dynamic> trackingData = await _saveTrackingData();
 
     await FlutterForegroundTask.saveData(key: 'is_tracking', value: 'false');
     await FlutterForegroundTask.saveData(key: 'is_paused', value: 'false');
@@ -364,32 +364,25 @@ class HomeScreenState extends State<HomeScreen>
     timer?.cancel();
     timer = null;
 
-    // Navigate to SavedTrailScreen after stopping tracking
+    // Navigate to SavedTrailScreen with tracking data
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const SavedTrailScreen(),
+        builder: (context) => SavedTrailScreen(
+          trackingData: trackingData,
+        ),
       ),
     );
   }
 
-  Future<void> _saveTrackingData() async {
+  Future<Map<String, dynamic>> _saveTrackingData() async {
+    Map<String, dynamic> trackingData = {};
+
     if (trackingPoints.isNotEmpty) {
       // Add start and end markers
       LatLng startPoint = trackingPoints.first;
       LatLng endPoint = trackingPoints.last;
-
-      final startMarker = Marker(
-        markerId: const MarkerId('start'),
-        position: startPoint,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-      );
-
-      final endMarker = Marker(
-        markerId: const MarkerId('end'),
-        position: endPoint,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-      );
 
       // Convert points to serializable format
       List<Map<String, double>> points = trackingPoints
@@ -397,8 +390,8 @@ class HomeScreenState extends State<HomeScreen>
               {'latitude': point.latitude, 'longitude': point.longitude})
           .toList();
 
-      // Save complete tracking data including markers
-      String trackingData = json.encode({
+      // Create tracking data
+      trackingData = {
         'points': points,
         'duration': LocationService().trackingDuration,
         'timestamp': DateTime.now().toIso8601String(),
@@ -410,11 +403,14 @@ class HomeScreenState extends State<HomeScreen>
           'latitude': endPoint.latitude,
           'longitude': endPoint.longitude
         }
-      });
+      };
 
+      // Save to FlutterForegroundTask storage
       await FlutterForegroundTask.saveData(
-          key: 'last_tracking_data', value: trackingData);
+          key: 'last_tracking_data', value: json.encode(trackingData));
     }
+
+    return trackingData;
   }
 
   @override
