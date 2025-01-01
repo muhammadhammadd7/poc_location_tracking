@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:overlay_support/overlay_support.dart';
 import 'home_screen.dart';
+import 'service/trail_sharing_service.dart';
+import 'shared_trail_screen.dart';
 
 void main() {
   runApp(const OverlaySupport.global(child: MyApp()));
@@ -11,9 +13,22 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: HomeScreen(),
+      theme: ThemeData(
+        primarySwatch: Colors.green,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: Builder(
+        builder: (context) {
+          // Initialize deep linking
+          TrailSharingService().initDeepLinking(context);
+          return const HomeScreen();
+        },
+      ),
+      routes: {
+        '/shared-trail': (context) => const SavedTrailScreen(),
+      },
     );
   }
 }
