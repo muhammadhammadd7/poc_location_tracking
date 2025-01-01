@@ -8,8 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 
 class TrailSharingService {
-  static const String APP_SCHEME = 'locationtracker';
-  static const String APP_HOST = 'trail';
+  static const String BASE_URL = 'https://locationservice.app/trail';
 
   // Singleton instance
   static final TrailSharingService _instance = TrailSharingService._internal();
@@ -27,7 +26,7 @@ class TrailSharingService {
 
   // Generate a shareable link for a trail
   Future<String> generateTrailLink(String trailId) async {
-    return '$APP_SCHEME://$APP_HOST?id=$trailId';
+    return '$BASE_URL/$trailId';
   }
 
   // Format trail details for sharing
@@ -102,11 +101,12 @@ class TrailSharingService {
     }
 
     final decodedData = json.decode(trailData);
-    final trailId = base64Encode(utf8.encode(json.encode({
-      'timestamp': decodedData['timestamp'],
-      'points': decodedData['points'],
-      'duration': decodedData['duration'],
-    })));
+    final trailId = decodedData['id'] ??
+        base64Encode(utf8.encode(json.encode({
+          'timestamp': decodedData['timestamp'],
+          'points': decodedData['points'],
+          'duration': decodedData['duration'],
+        })));
 
     final link = await generateTrailLink(trailId);
     final trailDetails = _formatTrailDetails(decodedData);
@@ -128,10 +128,11 @@ $link
 
   // Handle incoming shared links
   Future<void> handleIncomingLink(BuildContext context, Uri? uri) async {
-    if (uri == null || uri.scheme != APP_SCHEME || uri.host != APP_HOST) return;
+    if (uri == null || !uri.toString().startsWith(BASE_URL)) return;
 
-    final trailId = uri.queryParameters['id'];
-    if (trailId == null) return;
+    // Extract the trailId from the URL path
+    final trailId = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : null;
+    if (trailId == null || trailId.isEmpty) return;
 
     try {
       final decodedData = json.decode(utf8.decode(base64Decode(trailId)));
@@ -139,12 +140,10 @@ $link
       await FlutterForegroundTask.saveData(
           key: 'shared_trail_data', value: json.encode(decodedData));
 
-      // Show success notification
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Trail loaded successfully!')),
       );
 
-      // Navigate to the shared trail view
       Navigator.pushNamed(context, '/shared-trail');
     } catch (e) {
       debugPrint('Error handling shared link: $e');

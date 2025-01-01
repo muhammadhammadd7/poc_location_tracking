@@ -59,8 +59,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="locationtracker"
-                    android:host="trail" />
+                    android:scheme="https"
+                    android:host="locationservice.app"
+                    android:pathPrefix="/trail" />
             </intent-filter>
         </activity>
         
