@@ -23,7 +23,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:required="false" />
 
     <application
-        android:label="location_service"
+        android:label="Location Tracker"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
