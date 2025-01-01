@@ -1,11 +1,13 @@
 import 'dart:convert';
+
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:share_plus/share_plus.dart';
+
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 class TrailSharingService {
   static const String APP_SCHEME = 'locationtracker';
