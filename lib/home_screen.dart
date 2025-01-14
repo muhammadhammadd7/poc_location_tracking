@@ -38,7 +38,9 @@ class HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addObserver(this);
     initializeServices();
     _loadLastStoredLocation();
-    _loadTimer();
+    _saveTrackingData();
+    // _loadTimer();
+    _mapService.loadSavedTrackingData();
     _checkTrackingStatus();
     requestPermissionsAndroid();
     requestPermissionsIOS();
@@ -159,53 +161,64 @@ class HomeScreenState extends State<HomeScreen>
         await FlutterForegroundTask.getData<String>(key: 'tracking_points');
     if (locationData != null) {
       final locationMap = json.decode(locationData);
+
       if (kDebugMode) {
-        print(
-            '================================================================');
-      }
-      if (kDebugMode) {
+        print('============================================');
         print(locationMap);
+        print('=======================================');
       }
-      if (kDebugMode) {
-        print(
-            '================================================================');
-      }
+
       setState(() {
-        // lastStoredPosition = Position.fromMap(locationMap);
-        if (locationMap != null) {
-          trackingPoints = (locationMap as List)
-              .map((point) => LatLng(point['latitude'], point['longitude']))
+        // Check if locationMap is a list
+        if (locationMap is List) {
+          trackingPoints = locationMap
+              .map((point) => LatLng(
+                    point['latitude'] is double
+                        ? point['latitude']
+                        : double.parse(point['latitude'].toString()),
+                    point['longitude'] is double
+                        ? point['longitude']
+                        : double.parse(point['longitude'].toString()),
+                  ))
               .toList();
-          if (kDebugMode) {
-            print('===== | trackingPoints.length | =====');
+        } else if (locationMap is Map) {
+          // If it's a map, handle it accordingly
+          // Example: {"points": [{latitude: 12.3456, longitude: 78.9101}, ...]}
+          var points = locationMap['points'] as List?;
+          if (points != null) {
+            trackingPoints = points
+                .map((point) => LatLng(
+                      point['latitude'] is double
+                          ? point['latitude']
+                          : double.parse(point['latitude'].toString()),
+                      point['longitude'] is double
+                          ? point['longitude']
+                          : double.parse(point['longitude'].toString()),
+                    ))
+                .toList();
           }
-          if (kDebugMode) {
-            print(trackingPoints.length);
-          }
-          if (kDebugMode) {
-            print('===== | trackingPoints.length | =====');
-          }
-          // LatLng point =
-          // LatLng(
-          //     lastStoredPosition!.latitude, lastStoredPosition!.longitude);
-          // trackingPoints.add(point);
-          // _mapService.addPolylinePoint(point);
+        }
+
+        if (kDebugMode) {
+          print('===== | trackingPoints.length | =====');
+          print(trackingPoints.length);
+          print('===== | trackingPoints.length | =====');
         }
       });
     }
   }
 
-  Future<void> _loadTimer() async {
-    final timerData = await FlutterForegroundTask.getData<String>(key: 'timer');
-    setState(() {
-      LocationService().trackingDuration = int.tryParse(timerData ?? '0') ?? 0;
-    });
-  }
+  // Future<void> _loadTimer() async {
+  //   final timerData = await FlutterForegroundTask.getData<String>(key: 'timer');
+  //   setState(() {
+  //     LocationService().trackingDuration = int.tryParse(timerData ?? '0') ?? 0;
+  //   });
+  // }
 
-  Future<void> _saveTimer() async {
-    await FlutterForegroundTask.saveData(
-        key: 'timer', value: LocationService().trackingDuration.toString());
-  }
+  // Future<void> _saveTimer() async {
+  //   await FlutterForegroundTask.saveData(
+  //       key: 'timer', value: LocationService().trackingDuration.toString());
+  // }
 
   Future<void> _checkTrackingStatus() async {
     final trackingData =
@@ -262,9 +275,10 @@ class HomeScreenState extends State<HomeScreen>
     timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (!isPaused) {
         LocationService().trackingDuration++;
-        _saveTimer();
+        // _saveTimer();
 
         final position = await LocationService.getCurrentLocation();
+        // print('Position: ${position?.latitude} ${position?.longitude}');
         if (position != null) {
           setState(() {
             currentPosition = position;
@@ -343,9 +357,40 @@ class HomeScreenState extends State<HomeScreen>
   }
 
   void _stopTracking() async {
-    await _saveTimer();
-    Map<String, dynamic> trackingData = await _saveTrackingData();
+    final String? trackingPointsStr =
+        await FlutterForegroundTask.getData(key: 'tracking_points');
 
+    Map<String, dynamic> trackingData = {};
+
+    if (trackingPointsStr != null) {
+      try {
+        final List<dynamic> points = json.decode(trackingPointsStr);
+
+        if (points.isNotEmpty) {
+          // Get start and end points
+          final startPoint = points.first;
+          final endPoint = points.last;
+
+          trackingData = {
+            'points': points,
+            'duration': LocationService().trackingDuration,
+            'timestamp': DateTime.now().toIso8601String(),
+            'startMarker': {
+              'latitude': startPoint['latitude'],
+              'longitude': startPoint['longitude']
+            },
+            'endMarker': {
+              'latitude': endPoint['latitude'],
+              'longitude': endPoint['longitude']
+            }
+          };
+        }
+      } catch (e) {
+        debugPrint('Error preparing tracking data: $e');
+      }
+    }
+
+    // Clear tracking state
     await FlutterForegroundTask.saveData(key: 'is_tracking', value: 'false');
     await FlutterForegroundTask.saveData(key: 'is_paused', value: 'false');
     await FlutterForegroundTask.saveData(
@@ -359,12 +404,13 @@ class HomeScreenState extends State<HomeScreen>
       markers.clear();
     });
 
+    // Stop all services and subscriptions
     await FlutterForegroundTask.stopService();
     _eventSubscription?.cancel();
     timer?.cancel();
     timer = null;
 
-    // Navigate to SavedTrailScreen with tracking data
+    // Navigate to SavedTrailScreen with the collected data
     if (!mounted) return;
     Navigator.push(
       context,
@@ -406,8 +452,15 @@ class HomeScreenState extends State<HomeScreen>
       };
 
       // Save to FlutterForegroundTask storage
+
+      // await FlutterForegroundTask.saveData(
+      //   key: 'last_tracking_data',
+      //   value: json.encode(trackingData),
+      // );
       await FlutterForegroundTask.saveData(
-          key: 'last_tracking_data', value: json.encode(trackingData));
+        key: 'tracking_points',
+        value: json.encode(trackingPoints),
+      );
     }
 
     return trackingData;

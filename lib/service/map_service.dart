@@ -17,31 +17,55 @@ class MapService {
 
   void onMapCreated(GoogleMapController controller) {
     mapController = controller;
-    _loadSavedTrackingData();
+    loadSavedTrackingData();
   }
 
-  Future<void> _loadSavedTrackingData() async {
+  Future<void> loadSavedTrackingData() async {
+    final String? isTracking =
+        await FlutterForegroundTask.getData(key: 'is_tracking');
     final String? trackingData =
-        await FlutterForegroundTask.getData(key: 'last_tracking_data');
-    if (trackingData != null) {
-      final decodedData = json.decode(trackingData);
-      final List<dynamic> points = decodedData['points'];
+        await FlutterForegroundTask.getData(key: 'tracking_points');
 
-      List<LatLng> savedPoints = points
-          .map((point) =>
-              LatLng(point['latitude'] as double, point['longitude'] as double))
-          .toList();
+    if (isTracking == 'true' && trackingData != null) {
+      try {
+        debugPrint('Loading saved tracking data...');
 
-      if (savedPoints.isNotEmpty) {
-        _polylines.add(Polyline(
-          polylineId: const PolylineId('saved_route'),
-          color: const Color.fromARGB(255, 0, 128, 4),
-          width: 5,
-          points: savedPoints,
-          jointType: JointType.round,
-        ));
+        // Decode points from storage
+        List<Map<String, dynamic>> points =
+            List<Map<String, dynamic>>.from(json.decode(trackingData));
 
-        fitBounds(savedPoints);
+        trackingPoints.clear();
+
+        // Convert stored points to LatLng objects
+        for (var point in points) {
+          trackingPoints.add(LatLng(
+            double.parse(point['latitude'].toString()),
+            double.parse(point['longitude'].toString()),
+          ));
+        }
+
+        debugPrint('Loaded ${trackingPoints.length} points');
+
+        if (trackingPoints.isNotEmpty) {
+          // Create polyline from loaded points
+          _polylines.clear();
+          _polylines.add(Polyline(
+            polylineId: const PolylineId('tracking_route'),
+            color: const Color.fromARGB(255, 0, 128, 4),
+            width: 5,
+            points: List<LatLng>.from(trackingPoints),
+            jointType: JointType.round,
+            geodesic: true,
+          ));
+
+          // Fit map bounds after a short delay
+          Future.delayed(const Duration(milliseconds: 500), () {
+            fitBounds(trackingPoints);
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading tracking data: $e');
+        debugPrint('Raw data: $trackingData');
       }
     }
   }
@@ -81,24 +105,24 @@ class MapService {
     });
   }
 
-  Future<void> saveTrackingData() async {
-    if (trackingPoints.isEmpty) return;
+  // Future<void> saveTrackingData() async {
+  //   if (trackingPoints.isEmpty) return;
 
-    List<Map<String, double>> points = trackingPoints
-        .map((point) =>
-            {'latitude': point.latitude, 'longitude': point.longitude})
-        .toList();
+  //   List<Map<String, double>> points = trackingPoints
+  //       .map((point) =>
+  //           {'latitude': point.latitude, 'longitude': point.longitude})
+  //       .toList();
 
-    String trackingData = json.encode({
-      'points': points,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
+  //   // String trackingData = json.encode({
+  //   //   'points': points,
+  //   //   'timestamp': DateTime.now().toIso8601String(),
+  //   // });
 
-    await FlutterForegroundTask.saveData(
-      key: 'last_tracking_data',
-      value: trackingData,
-    );
-  }
+  //   // await FlutterForegroundTask.saveData(
+  //   //   key: 'tracking_points',
+  //   //   value: trackingData,
+  //   // );
+  // }
 
   Future<List<LatLng>> getPolylinePoints(
       LatLng origin, LatLng destination) async {
@@ -126,20 +150,39 @@ class MapService {
   }
 
   void addPolylinePoint(LatLng position) {
-    if (_polylines.isEmpty) {
+    if (!trackingPoints.contains(position)) {
+      trackingPoints.add(position);
+
+      _polylines.clear();
       _polylines.add(Polyline(
         polylineId: const PolylineId('tracking_route'),
         color: const Color.fromARGB(255, 0, 128, 4),
         width: 5,
-        points: [position],
+        points: List<LatLng>.from(trackingPoints),
         jointType: JointType.round,
+        geodesic: true,
       ));
-    } else {
-      final polyline = _polylines.first;
-      final updatedPoints = List<LatLng>.from(polyline.points)..add(position);
-      _polylines.remove(polyline);
-      _polylines.add(polyline.copyWith(pointsParam: updatedPoints));
+
+      // Save points immediately
+      _saveTrackingPoints();
     }
+  }
+
+  Future<void> _saveTrackingPoints() async {
+    if (trackingPoints.isEmpty) return;
+
+    // final pointsList = trackingPoints
+    //     .map((point) => {
+    //           'latitude': point.latitude,
+    //           'longitude': point.longitude,
+    //           'timestamp': DateTime.now().toIso8601String(),
+    //         })
+    //     .toList();
+
+    // await FlutterForegroundTask.saveData(
+    //   key: 'tracking_points',
+    //   value: json.encode(pointsList),
+    // );
   }
 
   Set<Polyline> get polylines => _polylines;

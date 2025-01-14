@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:advanced_background_locator/advanced_background_locator.dart';
+import 'package:advanced_background_locator/location_dto.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:background_locator_2/background_locator.dart';
-import 'package:background_locator_2/location_dto.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'foreground_task_handler.dart';
 
@@ -13,6 +16,7 @@ class LocationService {
   LocationService._internal();
   int trackingDuration = 0;
   StreamSubscription<Position>? _positionStreamSubscription;
+  List<LatLng> trackingPoints = [];
 
   /// Method to get the current location
   static Future<Position?> getCurrentLocation() async {
@@ -46,7 +50,7 @@ class LocationService {
 
   /// Initialize Background Locator
   Future<void> initializeBackgroundLocator() async {
-    await BackgroundLocator.initialize();
+    await AdvancedBackgroundLocator.initialize();
   }
 
   /// Register background location updates
@@ -54,7 +58,7 @@ class LocationService {
     // Cancel any existing subscription first
     await _positionStreamSubscription?.cancel();
 
-    await BackgroundLocator.registerLocationUpdate(
+    await AdvancedBackgroundLocator.registerLocationUpdate(
       (LocationDto location) {
         callback(location);
       },
@@ -69,7 +73,7 @@ class LocationService {
     await _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
 
-    await BackgroundLocator.unRegisterLocationUpdate();
+    await AdvancedBackgroundLocator.unRegisterLocationUpdate();
   }
 
   /// Android notification callback for background updates
@@ -121,6 +125,35 @@ class LocationService {
     }
   }
 
+  Future<bool> requestPermissions() async {
+    // Request location permissions
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.location,
+      Permission.locationAlways,
+      Permission.locationWhenInUse,
+    ].request();
+
+    // Check if all required permissions are granted
+    bool allGranted = statuses.values.every((status) => status.isGranted);
+
+    if (!allGranted) {
+      return false;
+    }
+
+    // For Android 14 (API 34) and above, explicitly check foreground service permission
+    if (Platform.isAndroid) {
+      final deviceInfo = await DeviceInfoPlugin().androidInfo;
+      if (deviceInfo.version.sdkInt >= 34) {
+        final fgsStatus = await Permission.systemAlertWindow.request();
+        if (!fgsStatus.isGranted) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
   ////
   // Format duration
   ////
@@ -136,6 +169,10 @@ class LocationService {
   // Start tracking
   ////
   Future<void> startTracking(Function(String) updateNotificationText) async {
+    bool permissionsGranted = await requestPermissions();
+    if (!permissionsGranted) {
+      throw Exception('Required permissions not granted');
+    }
     await FlutterForegroundTask.saveData(key: 'is_tracking', value: 'true');
     await FlutterForegroundTask.saveData(
         key: 'start_time', value: DateTime.now().toIso8601String());
@@ -153,21 +190,49 @@ class LocationService {
     // Start the timer and update every second
     Timer.periodic(const Duration(seconds: 1), (timer) async {
       trackingDuration++;
+      print('position: $trackingDuration');
       String formattedDuration = formatDuration();
       updateNotificationText(formattedDuration);
       final position = await getCurrentLocation();
+
+      print('Position: ${position?.latitude} ${position?.longitude}');
       if (position != null) {
-        // Update the location
-        final locationJson = json.encode(position.toJson());
+        LatLng point = LatLng(position.latitude, position.longitude);
+        trackingPoints.add(point);
+        trackingPoints.toSet().toList();
         await FlutterForegroundTask.saveData(
-            key: 'last_location', value: locationJson);
+          key: 'tracking_points',
+          value: json.encode(trackingPoints),
+        );
+        await FlutterForegroundTask.saveData(
+          key: 'last_location',
+          value: json.encode(position.toJson()),
+        );
+
         String notificationText =
-            'Timer: $formattedDuration\nLatitude: ${position.latitude.toStringAsFixed(8)}\nLongitude: ${position.longitude.toStringAsFixed(8)}';
+            'Timer: ${LocationService().formatDuration()}\n'
+            'Tracking in progress\n'
+            'Lat: ${position.latitude.toStringAsFixed(6)}, '
+            'Lng: ${position.longitude.toStringAsFixed(6)}';
+
         await FlutterForegroundTask.updateService(
           notificationTitle: 'Location Tracking Active',
           notificationText: notificationText,
         );
       }
+
+      // if (position != null) {
+      // Update the location
+      // final locationJson = json.encode(position.toJson());
+      // await FlutterForegroundTask.saveData(
+      //     key: 'last_location', value: locationJson);
+      // String notificationText =
+      //     'Timer: $formattedDuration\nLatitude: ${position.latitude.toStringAsFixed(8)}\nLongitude: ${position.longitude.toStringAsFixed(8)}';
+      // await FlutterForegroundTask.updateService(
+      //   notificationTitle: 'Location Tracking Active',
+      //   notificationText: notificationText,
+      // );
+      // }
     });
   }
 }
